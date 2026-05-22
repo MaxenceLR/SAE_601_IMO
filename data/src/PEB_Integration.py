@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import duckdb
-
+import json
 # =========================
 # 1. CHARGEMENT GEOJSON
 # =========================
@@ -22,7 +22,7 @@ df = pd.DataFrame([
         "DATE_ARRET": f["properties"].get("DATE_ARRET"),
         "DATE_MAJ": f["properties"].get("DATE_MAJ"),
         "ID_MAP": f["properties"].get("ID_MAP"),
-        "geometry": f["geometry"]
+        "geometry": json.dumps(f["geometry"])   # 👈 IMPORTANT
     }
     for f in data["features"]
 ])
@@ -33,8 +33,8 @@ print("Données chargées :", df.shape)
 # 2. BASE DUCKDB
 # =========================
 
-con = duckdb.connect("PEB.db")
-
+con = duckdb.connect(r"C:/temp/dvf.db")
+con.execute("DROP TABLE IF EXISTS peb")
 con.execute("""
 CREATE TABLE IF NOT EXISTS peb (
     zone VARCHAR,
@@ -75,3 +75,4 @@ FROM df_temp
 """)
 
 print("Table PEB intégrée ✔")
+
