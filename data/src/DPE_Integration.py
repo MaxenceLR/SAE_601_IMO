@@ -38,6 +38,7 @@ def importer_donnees(dept):
         url = f"{BASE_URL}?size={PAGE_SIZE}&qs=code_departement_ban%3A{dept}&select={select_param}"
 
         total = 0
+        page = 1
         t0 = time.perf_counter()
 
         while url:
@@ -50,8 +51,10 @@ def importer_donnees(dept):
             if rows:
                 conn.executemany(f"INSERT INTO raw_dpe VALUES ({','.join(['?'] * len(COLUMNS))})", rows)
                 total += len(rows)
+                print(f"   -> Page {page} téléchargée : {total} lignes insérées au total...")
 
             url = data.get("next")
+            page += 1
 
         print("\n" + "="*50)
         print(f"RAW_DPE TERMINEE POUR LE {dept} !")
