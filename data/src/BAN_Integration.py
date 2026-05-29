@@ -3,71 +3,31 @@ import os
 import time
 from pathlib import Path
 
-print("Démarrage de l'ETL (Initialisation de la base de données)...")
+def importer_donnees(dept):
+    print(f"Démarrage de l'ETL BAN pour le département {dept}...")
 
-# =========================
-# BASE UNIQUE (DVF + PEB + BAN)
-# =========================
+    BASE_DIR = Path(__file__).resolve().parent
+    db_path = BASE_DIR / "SAE_601_IMO" / "immo_sae2026.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
 
-BASE_DIR = Path(__file__).resolve().parent  # dossier du script
-db_path = BASE_DIR / "data" / "src" / "SAE_601_IMO" / "immo_sae2026.db"
+    con = duckdb.connect(str(db_path))
 
-db_path.parent.mkdir(parents=True, exist_ok=True)
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+    
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS dim_ban (
+            id VARCHAR, numero VARCHAR, rep VARCHAR, nom_voie VARCHAR,
+            code_postal VARCHAR, code_insee VARCHAR, nom_commune VARCHAR,
+            lon DOUBLE, lat DOUBLE
+        );
+    """)
 
-con = duckdb.connect(str(db_path))
+    # Nettoyage préalable corrigé (uniquement avec code_insee)
+    con.execute(f"DELETE FROM dim_ban WHERE code_insee LIKE '{dept}%';")
 
-
-# ==============================================================================
-# ÉTAPE 1 : INSTALLATION DES EXTENSIONS DUCKDB
-# ==============================================================================
-# httpfs permet à DuckDB de lire des fichiers directement depuis une URL (https://)
-print("Chargement de l'extension réseau (httpfs)...")
-con.execute("INSTALL httpfs;")
-con.execute("LOAD httpfs;")
-
-# =========================
-# BAN TABLE
-# =========================
-
-# ==============================================================================
-# ÉTAPE 2 : INTÉGRATION DE LA BAN (Base Adresse Nationale)
-# ==============================================================================
-print("\nCréation de la table DIM_BAN (Référentiel Spatial)...")
-con.execute("DROP TABLE IF EXISTS dim_ban;")
-
-con.execute("""
-    CREATE TABLE dim_ban (
-        id VARCHAR,
-        numero VARCHAR,
-        rep VARCHAR,
-        nom_voie VARCHAR,
-        code_postal VARCHAR,
-        code_insee VARCHAR,
-        nom_commune VARCHAR,
-        lon DOUBLE,
-        lat DOUBLE
-    );
-""")
-
-print("Génération de la liste complète des départements français...")
-
-departements = [f"{i:02d}" for i in range(1, 96) if i != 20]
-departements.extend(["2A", "2B"])
-departements.extend(["971", "972", "973", "974", "976"])
-departements.sort()
-
-print(f"Téléchargement et ingestion pour {len(departements)} départements programmés.")
-
-start_time = time.time()
-erreurs = []
-
-# =========================
-# INGESTION BAN
-# =========================
-
-for dept in departements:
-    print(f"{dept}")
-
+    start_time = time.time()
+    
+    # URL ciblée uniquement sur le département choisi
     url = f"https://adresse.data.gouv.fr/data/ban/adresses/latest/csv/adresses-{dept}.csv.gz"
 
     try:
@@ -76,31 +36,23 @@ for dept in departements:
             SELECT 
                 id, numero, rep, nom_voie, code_postal, 
                 code_insee, nom_commune, lon, lat 
-            FROM read_csv_auto(
-                '{url}',
-                delim=';',
-                header=True,
-                ignore_errors=true
-            )
+            FROM read_csv_auto('{url}', delim=';', header=True, ignore_errors=true)
         """)
+        nb_adresses = con.execute(f"SELECT COUNT(*) FROM dim_ban WHERE code_insee LIKE '{dept}%'").fetchone()[0]
+        
+        print("\n" + "="*50)
+        print(f"DIM_BAN TERMINEE POUR LE {dept} !")
+        print(f"{nb_adresses:,.0f} adresses chargées en {round(time.time() - start_time, 2)}s.")
+        print("="*50 + "\n")
     except Exception as e:
-        print(f"erreur {dept}")
-        erreurs.append(dept)
+        print(f"Erreur lors de l'intégration du département {dept} : {e}")
+    finally:
+        con.close()
 
-# =========================
-# CHECK
-# =========================
-
-nb_adresses = con.execute("SELECT COUNT(*) FROM dim_ban").fetchone()[0]
-duree_minutes = round((time.time() - start_time) / 60, 2)
-
-print("\n" + "="*50)
-print(f"DIM_BAN (NATIONALE) TERMINEE !")
-print(f"{nb_adresses:,.0f} adresses géolocalisées ont été chargées.")
-print(f"Temps total de traitement : {duree_minutes} minutes.")
-if erreurs:
-    print(f"Les départements suivants ont échoué (souvent un timeout réseau) : {erreurs}")
-print("="*50 + "\n")
-
-print("="*50)
-con.close()
+if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
+    
+    load_dotenv()
+    dept = os.getenv("DEPARTEMENT_CIBLE", "44")
+    importer_donnees(dept)

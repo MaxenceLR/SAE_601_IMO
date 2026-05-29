@@ -3,137 +3,68 @@ import requests
 import json
 import tempfile
 import os
+import time
 from pathlib import Path
 
-# =========================
-# CONFIG
-# =========================
+def importer_donnees(dept=None):
+    print("Démarrage de l'intégration des zones PEB (bruit)...")
+    start_time = time.time()
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]  
+    BASE_DIR = Path(__file__).resolve().parent
+    db_path = BASE_DIR / "SAE_601_IMO" / "immo_sae2026.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
 
-db_path = PROJECT_ROOT / "data" / "src" / "SAE_601_IMO" / "immo_sae2026.db"
+    PEB_ZONE_URLS = {
+        "B": "https://www.data.gouv.fr/api/1/datasets/r/ea77a7b5-0298-49ed-b3ff-caae3b15d022",
+        "C": "https://www.data.gouv.fr/api/1/datasets/r/a7f30166-3319-428e-a08e-700e3c0a3755",
+        "D": "https://www.data.gouv.fr/api/1/datasets/r/78087339-b725-4825-a9f7-8d4ef92b2963",
+    }
 
-db_path.parent.mkdir(parents=True, exist_ok=True)
+    all_features = []
 
-PEB_ZONE_URLS = {
-    "B": "https://www.data.gouv.fr/api/1/datasets/r/ea77a7b5-0298-49ed-b3ff-caae3b15d022",
-    "C": "https://www.data.gouv.fr/api/1/datasets/r/a7f30166-3319-428e-a08e-700e3c0a3755",
-    "D": "https://www.data.gouv.fr/api/1/datasets/r/78087339-b725-4825-a9f7-8d4ef92b2963",
-}
+    for zone, url in PEB_ZONE_URLS.items():
+        print(f"Téléchargement zone {zone}...")
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        data = response.json()
+        features = data.get("features", [])
 
-# =========================
-# CREATE FOLDER IF NEEDED
-# =========================
+        for f in features:
+            f.setdefault("properties", {})["peb_zone"] = zone
 
-os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        all_features.extend(features)
 
-# =========================
-# DOWNLOAD GEOJSON
-# =========================
+    tmp = tempfile.NamedTemporaryFile(suffix=".geojson", mode="w", delete=False, encoding="utf-8")
+    json.dump({"type": "FeatureCollection", "features": all_features}, tmp)
+    tmp.close()
 
-all_features = []
+    con = duckdb.connect(str(db_path))
+    con.execute("INSTALL spatial; LOAD spatial;")
+    con.execute("DROP TABLE IF EXISTS peb;")
 
-for zone, url in PEB_ZONE_URLS.items():
+    con.execute(f"""
+        CREATE TABLE peb AS
+        SELECT * EXCLUDE (geom),
+               ST_Transform(geom, 'EPSG:2154', 'EPSG:4326', always_xy := true) AS geom
+        FROM ST_Read('{tmp.name.replace(chr(92), '/')}')
+    """)
 
-    print(f"Téléchargement zone {zone}...")
+    con.execute("CREATE INDEX idx_peb_geom ON peb USING RTREE (geom);")
 
-    response = requests.get(url)
-    response.raise_for_status()
+    print("\n" + "="*50)
+    print("PEB TERMINEE !")
+    print(con.execute("SELECT peb_zone, COUNT(*) FROM peb GROUP BY peb_zone ORDER BY peb_zone").fetchall())
+    print(f"Temps total de traitement : {round(time.time() - start_time, 2)} secondes.")
+    print("="*50 + "\n")
 
-    data = response.json()
-    features = data.get("features", [])
+    con.close()
+    os.unlink(tmp.name)
 
-    # ajout zone
-    for f in features:
-        f.setdefault("properties", {})["peb_zone"] = zone
-
-    all_features.extend(features)
-
-    print(f"{len(features)} polygones")
-
-print(f"✔ Total PEB: {len(all_features)}")
-
-# =========================
-# TEMP FILE
-# =========================
-
-tmp = tempfile.NamedTemporaryFile(
-    suffix=".geojson",
-    mode="w",
-    delete=False,
-    encoding="utf-8"
-)
-
-json.dump(
-    {
-        "type": "FeatureCollection",
-        "features": all_features
-    },
-    tmp
-)
-
-tmp.close()
-
-# =========================
-# DUCKDB
-# =========================
-
-con = duckdb.connect(db_path)
-
-con.execute("INSTALL spatial")
-con.execute("LOAD spatial")
-
-con.execute("DROP TABLE IF EXISTS peb")
-
-# =========================
-# IMPORT SPATIAL
-# =========================
-
-con.execute(f"""
-CREATE TABLE peb AS
-SELECT
-    * EXCLUDE (geom),
-
-    ST_Transform(
-        geom,
-        'EPSG:2154',
-        'EPSG:4326',
-        always_xy := true
-    ) AS geom
-
-FROM ST_Read('{tmp.name}')
-""")
-
-# =========================
-# INDEX SPATIAL
-# =========================
-
-con.execute("""
-CREATE INDEX idx_peb_geom
-ON peb
-USING RTREE (geom)
-""")
-
-print("✔ Table PEB créée")
-
-# =========================
-# CHECK
-# =========================
-
-print(
-    con.execute("""
-    SELECT peb_zone, COUNT(*)
-    FROM peb
-    GROUP BY peb_zone
-    ORDER BY peb_zone
-    """).fetchall()
-)
-
-# =========================
-# CLEAN
-# =========================
-
-con.close()
-os.unlink(tmp.name)
-
-print("Terminé")
+if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
+    
+    load_dotenv()
+    dept = os.getenv("DEPARTEMENT_CIBLE", "44")
+    importer_donnees(dept)
