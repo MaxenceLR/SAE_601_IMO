@@ -3,7 +3,7 @@ import os
 import time
 from pathlib import Path
 
-print("🚀 Démarrage de l'ETL (Initialisation de la base de données)...")
+print("Démarrage de l'ETL (Initialisation de la base de données)...")
 
 # =========================
 # BASE UNIQUE (DVF + PEB + BAN)
@@ -21,7 +21,7 @@ con = duckdb.connect(str(db_path))
 # ÉTAPE 1 : INSTALLATION DES EXTENSIONS DUCKDB
 # ==============================================================================
 # httpfs permet à DuckDB de lire des fichiers directement depuis une URL (https://)
-print("📦 Chargement de l'extension réseau (httpfs)...")
+print("Chargement de l'extension réseau (httpfs)...")
 con.execute("INSTALL httpfs;")
 con.execute("LOAD httpfs;")
 
@@ -32,7 +32,7 @@ con.execute("LOAD httpfs;")
 # ==============================================================================
 # ÉTAPE 2 : INTÉGRATION DE LA BAN (Base Adresse Nationale)
 # ==============================================================================
-print("\n🌍 Création de la table DIM_BAN (Référentiel Spatial)...")
+print("\nCréation de la table DIM_BAN (Référentiel Spatial)...")
 con.execute("DROP TABLE IF EXISTS dim_ban;")
 
 con.execute("""
@@ -49,14 +49,14 @@ con.execute("""
     );
 """)
 
-print("🗺️ Génération de la liste complète des départements français...")
+print("Génération de la liste complète des départements français...")
 
 departements = [f"{i:02d}" for i in range(1, 96) if i != 20]
 departements.extend(["2A", "2B"])
 departements.extend(["971", "972", "973", "974", "976"])
 departements.sort()
 
-print(f"⬇️  Téléchargement et ingestion pour {len(departements)} départements programmés.")
+print(f"Téléchargement et ingestion pour {len(departements)} départements programmés.")
 
 start_time = time.time()
 erreurs = []
@@ -66,7 +66,7 @@ erreurs = []
 # =========================
 
 for dept in departements:
-    print(f"➡️ {dept}")
+    print(f"{dept}")
 
     url = f"https://adresse.data.gouv.fr/data/ban/adresses/latest/csv/adresses-{dept}.csv.gz"
 
@@ -84,7 +84,7 @@ for dept in departements:
             )
         """)
     except Exception as e:
-        print(f"❌ erreur {dept}")
+        print(f"erreur {dept}")
         erreurs.append(dept)
 
 # =========================
@@ -95,11 +95,11 @@ nb_adresses = con.execute("SELECT COUNT(*) FROM dim_ban").fetchone()[0]
 duree_minutes = round((time.time() - start_time) / 60, 2)
 
 print("\n" + "="*50)
-print(f"✅ DIM_BAN (NATIONALE) TERMINEE !")
-print(f"🏠 {nb_adresses:,.0f} adresses géolocalisées ont été chargées.")
-print(f"⏱️ Temps total de traitement : {duree_minutes} minutes.")
+print(f"DIM_BAN (NATIONALE) TERMINEE !")
+print(f"{nb_adresses:,.0f} adresses géolocalisées ont été chargées.")
+print(f"Temps total de traitement : {duree_minutes} minutes.")
 if erreurs:
-    print(f"⚠️ Les départements suivants ont échoué (souvent un timeout réseau) : {erreurs}")
+    print(f"Les départements suivants ont échoué (souvent un timeout réseau) : {erreurs}")
 print("="*50 + "\n")
 
 print("="*50)
