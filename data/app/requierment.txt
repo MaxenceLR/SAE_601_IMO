@@ -1,5 +1,0 @@
-streamlit
-duckdb
-pandas
-folium
-streamlit-folium
