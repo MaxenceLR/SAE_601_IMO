@@ -3,12 +3,17 @@ import requests
 import json
 import tempfile
 import os
+from pathlib import Path
 
 # =========================
 # CONFIG
 # =========================
 
-db_path = r"C:\temp\SAE_601_IMO\data\src\SAE_601_IMO\immo_sae2026.db"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]  
+
+db_path = PROJECT_ROOT / "data" / "src" / "SAE_601_IMO" / "immo_sae2026.db"
+
+db_path.parent.mkdir(parents=True, exist_ok=True)
 
 PEB_ZONE_URLS = {
     "B": "https://www.data.gouv.fr/api/1/datasets/r/ea77a7b5-0298-49ed-b3ff-caae3b15d022",
