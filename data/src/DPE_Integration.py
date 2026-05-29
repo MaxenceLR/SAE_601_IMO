@@ -15,8 +15,8 @@ db_path = base_path / "immo_sae2026.db"
 
 base_path.mkdir(exist_ok=True)
 
-print("📁 Dossier data :", base_path)
-print("🗄️ Base DPE :", db_path)
+print("Dossier data :", base_path)
+print("Base DPE :", db_path)
 
 # ==========================================
 # API ADEME
@@ -57,7 +57,7 @@ def ingest_dpe_data(dept, db_file):
 
     select_param = ",".join(COLUMNS)
 
-    print(f"🔌 Connexion DuckDB : {db_file}")
+    print(f"Connexion DuckDB : {db_file}")
     conn = duckdb.connect(str(db_file))
 
     try:
@@ -88,7 +88,7 @@ def ingest_dpe_data(dept, db_file):
         """)
 
         # Nettoyage département
-        print(f"🧹 Nettoyage département {dept}...")
+        print(f"Nettoyage département {dept}...")
         conn.execute("DELETE FROM raw_dpe WHERE code_departement_ban = ?", [dept])
 
         # API
@@ -98,7 +98,7 @@ def ingest_dpe_data(dept, db_file):
         page = 0
         t0 = time.perf_counter()
 
-        print(f"🚀 Début ingestion DPE dept {dept}")
+        print(f"Début ingestion DPE dept {dept}")
 
         while url:
             t_page = time.perf_counter()
@@ -135,8 +135,8 @@ def ingest_dpe_data(dept, db_file):
             url = data.get("next")
             page += 1
 
-        print(f"\n✔ TERMINE : {total} lignes insérées pour le département {dept}")
-        print(f"⏱️ Temps total : {time.perf_counter() - t0:.1f}s")
+        print(f"\n TERMINE : {total} lignes insérées pour le département {dept}")
+        print(f"Temps total : {time.perf_counter() - t0:.1f}s")
 
     finally:
         conn.close()
