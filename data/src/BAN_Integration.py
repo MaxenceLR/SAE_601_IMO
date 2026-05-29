@@ -1,6 +1,7 @@
 import duckdb
 import os
 import time
+from pathlib import Path
 
 print("🚀 Démarrage de l'ETL (Initialisation de la base de données)...")
 
@@ -8,11 +9,13 @@ print("🚀 Démarrage de l'ETL (Initialisation de la base de données)...")
 # BASE UNIQUE (DVF + PEB + BAN)
 # =========================
 
-db_path = r"C:\temp\SAE_601_IMO\data\src\SAE_601_IMO\immo_sae2026.db"
+BASE_DIR = Path(__file__).resolve().parent  # dossier du script
+db_path = BASE_DIR / "data" / "src" / "SAE_601_IMO" / "immo_sae2026.db"
 
-os.makedirs(os.path.dirname(db_path), exist_ok=True)
+db_path.parent.mkdir(parents=True, exist_ok=True)
 
-con = duckdb.connect(db_path)
+con = duckdb.connect(str(db_path))
+
 
 # ==============================================================================
 # ÉTAPE 1 : INSTALLATION DES EXTENSIONS DUCKDB
