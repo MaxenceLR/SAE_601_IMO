@@ -3,16 +3,18 @@ import duckdb
 import os
 
 # ======================
-# 1. DOSSIER LOCAL SAFE
+# PATHS
 # ======================
+
 file_path = r"C:\temp\dvf.csv.gz"
 db_path = r"C:\temp\dvf.db"
 
 os.makedirs(r"C:\temp", exist_ok=True)
 
 # ======================
-# 2. DOWNLOAD
+# DOWNLOAD
 # ======================
+
 url = "https://static.data.gouv.fr/resources/demandes-de-valeurs-foncieres-geolocalisees/20260424-090024/dvf.csv.gz"
 
 print("Téléchargement DVF...")
@@ -26,27 +28,34 @@ with open(file_path, "wb") as f:
 print("Téléchargement terminé ✔")
 
 # ======================
-# 3. DUCKDB
+# DUCKDB
 # ======================
-print("Création base DuckDB...")
 
 con = duckdb.connect(db_path)
-con.execute("""
-drop table if exists dvf
-""")
+
+con.execute("INSTALL spatial")
+con.execute("LOAD spatial")
+
+con.execute("DROP TABLE IF EXISTS dvf")
+
 con.execute("""
 CREATE TABLE dvf AS
-SELECT *
+SELECT *,
+       ST_Point(
+            CAST(longitude AS DOUBLE),
+            CAST(latitude AS DOUBLE)
+       ) AS geom
 FROM read_csv_auto(
     'C:/temp/dvf.csv.gz',
     all_varchar=true,
     ignore_errors=true
 )
+WHERE latitude IS NOT NULL
+AND longitude IS NOT NULL
 """)
-print("Import terminé ✔")
 
-result = con.execute("""
-select * from dvf limit 5
-""").fetchdf()
+print("Import DVF terminé ✔")
 
-print(result)
+print(
+    con.execute("SELECT COUNT(*) FROM dvf").fetchall()
+)

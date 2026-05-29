@@ -1,78 +1,121 @@
-import requests
-import pandas as pd
 import duckdb
+import requests
 import json
-# =========================
-# 1. CHARGEMENT GEOJSON
-# =========================
-
-url = "https://static.data.gouv.fr/resources/zonage-des-plan-dexposition-au-bruit-peb/20200602-202334/c-dgac-peb-metro-za.geojson"
-
-data = requests.get(url).json()
-
-df = pd.DataFrame([
-    {
-        "ZONE": f["properties"].get("ZONE"),
-        "CODE_OACI": f["properties"].get("CODE_OACI"),
-        "NOM": f["properties"].get("NOM"),
-        "PRODUCTEUR": f["properties"].get("PRODUCTEUR"),
-        "REF_DOC": f["properties"].get("REF_DOC"),
-        "INDLDENEXT": f["properties"].get("INDLDENEXT"),
-        "INDLDENINT": f["properties"].get("INDLDENINT"),
-        "DATE_ARRET": f["properties"].get("DATE_ARRET"),
-        "DATE_MAJ": f["properties"].get("DATE_MAJ"),
-        "ID_MAP": f["properties"].get("ID_MAP"),
-        "geometry": json.dumps(f["geometry"])   # 👈 IMPORTANT
-    }
-    for f in data["features"]
-])
-
-print("Données chargées :", df.shape)
+import tempfile
+import os
 
 # =========================
-# 2. BASE DUCKDB
+# CONFIG
 # =========================
 
-con = duckdb.connect(r"C:/temp/dvf.db")
-con.execute("DROP TABLE IF EXISTS peb")
-con.execute("""
-CREATE TABLE IF NOT EXISTS peb (
-    zone VARCHAR,
-    code_oaci VARCHAR,
-    nom VARCHAR,
-    producteur VARCHAR,
-    ref_doc VARCHAR,
-    indldenext VARCHAR,
-    indldenint VARCHAR,
-    date_arret VARCHAR,
-    date_maj VARCHAR,
-    id_map VARCHAR,
-    geometry VARCHAR
+db_path = r"C:/temp/dvf.db"
+
+PEB_ZONE_URLS = {
+    "B": "https://www.data.gouv.fr/api/1/datasets/r/ea77a7b5-0298-49ed-b3ff-caae3b15d022",
+    "C": "https://www.data.gouv.fr/api/1/datasets/r/a7f30166-3319-428e-a08e-700e3c0a3755",
+    "D": "https://www.data.gouv.fr/api/1/datasets/r/78087339-b725-4825-a9f7-8d4ef92b2963",
+}
+
+# =========================
+# DOWNLOAD GEOJSON
+# =========================
+
+all_features = []
+
+for zone, url in PEB_ZONE_URLS.items():
+
+    print(f"Téléchargement zone {zone}...")
+
+    response = requests.get(url)
+    data = response.json()
+
+    features = data.get("features", [])
+
+    # ajout zone
+    for f in features:
+        f.setdefault("properties", {})["peb_zone"] = zone
+
+    all_features.extend(features)
+
+    print(f"{len(features)} polygones")
+
+# =========================
+# TEMP FILE
+# =========================
+
+tmp = tempfile.NamedTemporaryFile(
+    suffix=".geojson",
+    mode="w",
+    delete=False,
+    encoding="utf-8"
 )
+
+json.dump(
+    {
+        "type": "FeatureCollection",
+        "features": all_features
+    },
+    tmp
+)
+
+tmp.close()
+
+# =========================
+# DUCKDB
+# =========================
+
+con = duckdb.connect(db_path)
+
+con.execute("INSTALL spatial")
+con.execute("LOAD spatial")
+
+con.execute("DROP TABLE IF EXISTS peb")
+
+# =========================
+# IMPORT SPATIAL
+# =========================
+
+con.execute(f"""
+CREATE TABLE peb AS
+SELECT
+    * EXCLUDE (geom),
+
+    ST_Transform(
+        geom,
+        'EPSG:2154',
+        'EPSG:4326',
+        always_xy := true
+    ) AS geom
+
+FROM ST_Read('{tmp.name}')
 """)
 
 # =========================
-# 3. INSERTION
+# INDEX
 # =========================
-
-con.register("df_temp", df)
 
 con.execute("""
-INSERT INTO peb
-SELECT
-    ZONE,
-    CODE_OACI,
-    NOM,
-    PRODUCTEUR,
-    REF_DOC,
-    INDLDENEXT,
-    INDLDENINT,
-    DATE_ARRET,
-    DATE_MAJ,
-    ID_MAP,
-    geometry
-FROM df_temp
+CREATE INDEX idx_peb_geom
+ON peb
+USING RTREE (geom)
 """)
 
-print("Table PEB intégrée ✔")
+print("Table PEB créée ✔")
 
+# =========================
+# CHECK
+# =========================
+
+result = con.execute("""
+SELECT peb_zone, COUNT(*)
+FROM peb
+GROUP BY peb_zone
+ORDER BY peb_zone
+""").fetchall()
+
+print(result)
+
+con.close()
+
+# suppression temp
+os.unlink(tmp.name)
