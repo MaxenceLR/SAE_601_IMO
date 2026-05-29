@@ -1,0 +1,12 @@
+[theme]
+# L'orange de votre logo (pour les boutons et sélections)
+primaryColor = "#FF8C00" 
+
+# Un fond très légèrement grisé/beige clair (sobre et doux pour les yeux)
+backgroundColor = "#F4F4F4" 
+
+# Fond blanc pur pour les zones de texte et les encarts (contraste propre)
+secondaryBackgroundColor = "#FFFFFF" 
+
+# Texte en gris très foncé (plus doux à lire que le noir pur)
+textColor = "#262730"
