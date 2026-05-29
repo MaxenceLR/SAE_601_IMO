@@ -1,0 +1,17 @@
+# Environnements virtuels
+venv/
+env/
+
+# Fichiers de configuration sensibles
+.env
+
+# Fichiers cache Python
+__pycache__/
+*.pyc
+
+# Ignorer les données volumineuses et la base de données locale
+# Cela evite de saturer le serveur Git avec des fichiers de plusieurs Go
+*.csv.gz
+*.geojson
+*.db
+*.db.wal
