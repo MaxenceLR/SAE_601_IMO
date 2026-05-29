@@ -1,16 +1,22 @@
-import requests
-import pandas as pd
+import time
 import duckdb
+import requests
 
-# =========================
-# 1. CONFIG API
-# =========================
+# ==========================================
+# CONFIGURATION (Facile à modifier)
+# ==========================================
+# Change le département ici (ex: "44", "29", "35", etc.)
+TARGET_DEPARTMENT = "44"
 
+# Nom du fichier de base de données DuckDB locale
+DB_FILE = "dpe_data.duckdb"
+
+# API ADEME - DPE v2 (Logements existants depuis Juillet 2021)
 DATASET_ID = "meg-83tjwtg8dyz4vv7h1dqe"
 BASE_URL = f"https://data.ademe.fr/data-fair/api/v1/datasets/{DATASET_ID}/lines"
-
 PAGE_SIZE = 10_000
 
+# Colonnes à conserver
 COLUMNS = [
     "numero_dpe",
     "date_etablissement_dpe",
@@ -34,105 +40,91 @@ COLUMNS = [
     "type_energie_principale_ecs",
 ]
 
-# =========================
-# 2. EXTRACTION (FILTRÉ 44)
-# =========================
+# ==========================================
+# FONCTION PRINCIPALE D'INGESTION
+# ==========================================
+def ingest_dpe_data(dept, db_path):
+    select_param = ",".join(COLUMNS)
+    
+    print(f"Connexion à la base DuckDB : {db_path}")
+    # Connexion à DuckDB (crée le fichier s'il n'existe pas)
+    conn = duckdb.connect(db_path)
+    
+    try:
+        # 1. Création de la table si elle n'existe pas
+        conn.execute(f"""
+            CREATE TABLE IF NOT EXISTS raw_dpe (
+                numero_dpe                      VARCHAR,
+                date_etablissement_dpe          DATE,
+                date_fin_validite_dpe           DATE,
+                type_batiment                   VARCHAR,
+                periode_construction            VARCHAR,
+                adresse_ban                     VARCHAR,
+                adresse_brut                    VARCHAR,
+                code_postal_ban                 VARCHAR,
+                code_insee_ban                  VARCHAR,
+                code_departement_ban            VARCHAR,
+                nom_commune_ban                 VARCHAR,
+                identifiant_ban                 VARCHAR,
+                coordonnee_cartographique_x_ban DOUBLE,
+                coordonnee_cartographique_y_ban DOUBLE,
+                etiquette_dpe                   VARCHAR,
+                etiquette_ges                   VARCHAR,
+                conso_5_usages_par_m2_ep        DOUBLE,
+                surface_habitable_immeuble      DOUBLE,
+                type_energie_principale_chauffage VARCHAR,
+                type_energie_principale_ecs     VARCHAR
+            )
+        """)
 
-all_rows = []
-offset = 0
+        # 2. Nettoyage des anciennes données pour le département choisi
+        print(f"Nettoyage des anciennes données pour le département {dept}...")
+        conn.execute("DELETE FROM raw_dpe WHERE code_departement_ban = ?", [dept])
 
-while True:
+        # 3. Pagination et récupération des données via l'API
+        url = f"{BASE_URL}?size={PAGE_SIZE}&qs=code_departement_ban%3A{dept}&select={select_param}"
+        total_inserted = 0
+        page = 0
+        t0 = time.perf_counter()
 
-    params = {
-        "size": PAGE_SIZE,
-        "offset": offset,
-        "q": "code_departement_ban:44"
-    }
+        print(f"Début du téléchargement pour le département {dept}...")
+        while url:
+            t_page = time.perf_counter()
+            response = requests.get(url, timeout=120)
+            response.raise_for_status()
+            data = response.json()
+            t_network = time.perf_counter() - t_page
 
-    response = requests.get(BASE_URL, params=params)
+            rows = [
+                tuple(r.get(col) for col in COLUMNS)
+                for r in data.get("results", [])
+            ]
 
-    if response.status_code != 200:
-        print(response.text)
-        response.raise_for_status()
+            if rows:
+                t_ins = time.perf_counter()
+                # Insertion des lignes par paquets
+                conn.executemany(
+                    f"INSERT INTO raw_dpe VALUES ({','.join(['?'] * len(COLUMNS))})",
+                    rows,
+                )
+                t_insert = time.perf_counter() - t_ins
+                total_inserted += len(rows)
+                
+                print(
+                    f"Dept {dept} — page {page}: {len(rows)} lignes insérées | "
+                    f"réseau {t_network:.1f}s | insertion {t_insert:.1f}s | "
+                    f"total cumulé {time.perf_counter() - t0:.0f}s"
+                )
 
-    rows = response.json().get("results", [])
+            url = data.get("next")
+            page += 1
 
-    if not rows:
-        break
+        print(f"\n[SUCCÈS] Département {dept} terminé : {total_inserted} lignes insérées au total.")
 
-    filtered_rows = [
-        {col: row.get(col) for col in COLUMNS}
-        for row in rows
-    ]
+    finally:
+        # Fermeture propre de la connexion
+        conn.close()
 
-    all_rows.extend(filtered_rows)
-
-    print(f"Offset {offset} → {len(filtered_rows)} lignes (44 uniquement)")
-
-    if len(rows) < PAGE_SIZE:
-        break
-
-    offset += PAGE_SIZE
-
-# =========================
-# 3. DATAFRAME
-# =========================
-
-df = pd.DataFrame(all_rows, columns=COLUMNS)
-
-df["date_etablissement_dpe"] = pd.to_datetime(df["date_etablissement_dpe"], errors="coerce")
-df["date_fin_validite_dpe"] = pd.to_datetime(df["date_fin_validite_dpe"], errors="coerce")
-
-for col in [
-    "coordonnee_cartographique_x_ban",
-    "coordonnee_cartographique_y_ban",
-    "conso_5_usages_par_m2_ep",
-    "surface_habitable_immeuble"
-]:
-    df[col] = pd.to_numeric(df[col], errors="coerce")
-
-print("DataFrame 44 :", df.shape)
-
-# =========================
-# 4. DUCKDB
-# =========================
-
-con = duckdb.connect("DPE.db")
-
-con.execute("""
-CREATE TABLE IF NOT EXISTS raw_dpe (
-    numero_dpe                         VARCHAR,
-    date_etablissement_dpe             DATE,
-    date_fin_validite_dpe              DATE,
-    type_batiment                      VARCHAR,
-    periode_construction               VARCHAR,
-    adresse_ban                        VARCHAR,
-    adresse_brut                       VARCHAR,
-    code_postal_ban                    VARCHAR,
-    code_insee_ban                     VARCHAR,
-    code_departement_ban               VARCHAR,
-    nom_commune_ban                    VARCHAR,
-    identifiant_ban                    VARCHAR,
-    coordonnee_cartographique_x_ban    DOUBLE,
-    coordonnee_cartographique_y_ban    DOUBLE,
-    etiquette_dpe                      VARCHAR,
-    etiquette_ges                      VARCHAR,
-    conso_5_usages_par_m2_ep           DOUBLE,
-    surface_habitable_immeuble         DOUBLE,
-    type_energie_principale_chauffage  VARCHAR,
-    type_energie_principale_ecs        VARCHAR
-)
-""")
-
-con.register("df_temp", df)
-
-con.execute("""
-INSERT INTO raw_dpe
-SELECT * FROM df_temp
-""")
-
-print("✔ Données DPE intégrées")
-
-print(con.execute("SELECT COUNT(*) FROM raw_dpe").fetchone())
-
-con.close()
+# Exécution du script
+if __name__ == "__main__":
+    ingest_dpe_data(TARGET_DEPARTMENT, DB_FILE)
