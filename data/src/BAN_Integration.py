@@ -2,7 +2,7 @@ import duckdb
 import os
 import time
 
-print("🚀 Démarrage de l'ETL (Initialisation de la base de données)...")
+print(" Démarrage de l'ETL (Initialisation de la base de données)...")
 
 # 1. Création du dossier 'data' (même si on utilise le web, c'est une bonne pratique)
 os.makedirs("data", exist_ok=True)
@@ -14,7 +14,7 @@ con = duckdb.connect("immo_bi_database.db")
 # ÉTAPE 1 : INSTALLATION DES EXTENSIONS DUCKDB
 # ==============================================================================
 # httpfs permet à DuckDB de lire des fichiers directement depuis une URL (https://)
-print("📦 Chargement de l'extension réseau (httpfs)...")
+print(" Chargement de l'extension réseau (httpfs)...")
 con.execute("INSTALL httpfs;")
 con.execute("LOAD httpfs;")
 
@@ -22,7 +22,7 @@ con.execute("LOAD httpfs;")
 # ==============================================================================
 # ÉTAPE 2 : INTÉGRATION DE LA BAN (Base Adresse Nationale)
 # ==============================================================================
-print("\n🌍 Création de la table DIM_BAN (Référentiel Spatial)...")
+print("\n Création de la table DIM_BAN (Référentiel Spatial)...")
 con.execute("DROP TABLE IF EXISTS dim_ban;")
 
 # Création de la structure de la table pour les adresses
@@ -40,7 +40,7 @@ con.execute("""
     );
 """)
 
-print("🗺️ Génération de la liste complète des départements français...")
+print(" Génération de la liste complète des départements français...")
 
 # 1. Départements métropolitains de 01 à 95 (en excluant temporairement la Corse 20)
 departements = [f"{i:02d}" for i in range(1, 96) if i != 20]
@@ -54,7 +54,7 @@ departements.extend(["971", "972", "973", "974", "976"])
 # Tri de la liste pour que l'exécution soit propre dans les logs
 departements.sort()
 
-print(f"⬇️  Téléchargement et ingestion pour {len(departements)} départements programmés.")
+print(f"  Téléchargement et ingestion pour {len(departements)} départements programmés.")
 
 start_time = time.time()
 erreurs = [] # Pour stocker les éventuels départements qui échouent (ex: erreur réseau temporaire)
@@ -78,9 +78,9 @@ nb_adresses = con.execute("SELECT COUNT(*) FROM dim_ban").fetchone()[0]
 duree_minutes = round((time.time() - start_time) / 60, 2)
 
 print("\n" + "="*50)
-print(f"✅ DIM_BAN (NATIONALE) TERMINEE !")
-print(f"🏠 {nb_adresses:,.0f} adresses géolocalisées ont été chargées.")
-print(f"⏱️ Temps total de traitement : {duree_minutes} minutes.")
+print(f" DIM_BAN (NATIONALE) TERMINEE !")
+print(f" {nb_adresses:,.0f} adresses géolocalisées ont été chargées.")
+print(f"⏱ Temps total de traitement : {duree_minutes} minutes.")
 if erreurs:
-    print(f"⚠️ Les départements suivants ont échoué (souvent un timeout réseau) : {erreurs}")
+    print(f" Les départements suivants ont échoué (souvent un timeout réseau) : {erreurs}")
 print("="*50 + "\n")
