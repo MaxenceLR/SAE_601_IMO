@@ -8,13 +8,19 @@ import os
 # CONFIG
 # =========================
 
-db_path = r"C:/temp/dvf.db"
+db_path = r"C:\temp\SAE_601_IMO\data\src\SAE_601_IMO\immo_sae2026.db"
 
 PEB_ZONE_URLS = {
     "B": "https://www.data.gouv.fr/api/1/datasets/r/ea77a7b5-0298-49ed-b3ff-caae3b15d022",
     "C": "https://www.data.gouv.fr/api/1/datasets/r/a7f30166-3319-428e-a08e-700e3c0a3755",
     "D": "https://www.data.gouv.fr/api/1/datasets/r/78087339-b725-4825-a9f7-8d4ef92b2963",
 }
+
+# =========================
+# CREATE FOLDER IF NEEDED
+# =========================
+
+os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
 # =========================
 # DOWNLOAD GEOJSON
@@ -27,8 +33,9 @@ for zone, url in PEB_ZONE_URLS.items():
     print(f"Téléchargement zone {zone}...")
 
     response = requests.get(url)
-    data = response.json()
+    response.raise_for_status()
 
+    data = response.json()
     features = data.get("features", [])
 
     # ajout zone
@@ -38,6 +45,8 @@ for zone, url in PEB_ZONE_URLS.items():
     all_features.extend(features)
 
     print(f"{len(features)} polygones")
+
+print(f"✔ Total PEB: {len(all_features)}")
 
 # =========================
 # TEMP FILE
@@ -91,7 +100,7 @@ FROM ST_Read('{tmp.name}')
 """)
 
 # =========================
-# INDEX
+# INDEX SPATIAL
 # =========================
 
 con.execute("""
@@ -100,22 +109,26 @@ ON peb
 USING RTREE (geom)
 """)
 
-print("Table PEB créée ✔")
+print("✔ Table PEB créée")
 
 # =========================
 # CHECK
 # =========================
 
-result = con.execute("""
-SELECT peb_zone, COUNT(*)
-FROM peb
-GROUP BY peb_zone
-ORDER BY peb_zone
-""").fetchall()
+print(
+    con.execute("""
+    SELECT peb_zone, COUNT(*)
+    FROM peb
+    GROUP BY peb_zone
+    ORDER BY peb_zone
+    """).fetchall()
+)
 
-print(result)
+# =========================
+# CLEAN
+# =========================
 
 con.close()
-
-# suppression temp
 os.unlink(tmp.name)
+
+print("🚀 Terminé")
