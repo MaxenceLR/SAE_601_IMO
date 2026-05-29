@@ -136,4 +136,4 @@ print(
 con.close()
 os.unlink(tmp.name)
 
-print("🚀 Terminé")
+print("Terminé")
