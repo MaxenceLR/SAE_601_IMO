@@ -11,7 +11,7 @@ TARGET_DEPARTMENT = "44"
 
 # Dossier projet portable (comme DVF)
 base_path = Path(__file__).resolve().parent / "SAE_601_IMO"
-db_path = base_path / "dpe_data.duckdb"
+db_path = base_path / "immo_sae2026.db"
 
 base_path.mkdir(exist_ok=True)
 
