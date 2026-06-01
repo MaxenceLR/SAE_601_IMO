@@ -1,190 +1,101 @@
 import streamlit as st
-import streamlit.components.v1 as components
-import json
 import folium
 from streamlit_folium import st_folium
-import duckdb
+import os
+from PIL import Image
 
-# Configuration de la page en mode large
+# 1. Configuration de la page
 st.set_page_config(page_title="Cherche Ton Logement", page_icon="📍", layout="wide")
 
-# CSS pour le logo et le style global
-css_logo = """
-<style>
-    .header-logo {
-        position: absolute;
-        top: 10px;
-        right: 20px;
-        z-index: 9999;
-        font-family: 'Arial Black', Impact, sans-serif;
-        font-size: 32px;
-        text-shadow: 
-            -3px -3px 0 #FFF,  
-             3px -3px 0 #FFF,
-            -3px  3px 0 #FFF,
-             3px  3px 0 #FFF,
-             0px  4px 5px rgba(0,0,0,0.2); 
-    }
-    .text-cherche { color: white; }
-    .text-logement { color: #FF8C00; }
-    .block-container { padding-top: 4rem; }
-</style>
-<div class="header-logo">
-    <span class="text-cherche">cherche ton</span> <span class="text-logement">logement</span>
-</div>
-"""
-st.markdown(css_logo, unsafe_allow_html=True)
+# 2. Chargement sécurisé du logo
+# Cette ligne trouve automatiquement le logo s'il est dans le même dossier que ce script
+chemin_logo = os.path.join(os.path.dirname(__file__), "logo.png")
+logo = Image.open(chemin_logo)
 
-# -----------------------------------------------------------------------------
-# CONNEXION À DUCKDB ET RÉCUPÉRATION DYNAMIQUE
-# -----------------------------------------------------------------------------
-@st.cache_data
-def get_geodata(dept_code):
-    """
-    Récupère 100% des communes, mais uniquement pour le département sélectionné.
-    """
-    try:
-        con = duckdb.connect("immo_bi_database.db", read_only=True)
-        con.execute("INSTALL spatial;")
-        con.execute("LOAD spatial;")
-        
-        # On filtre via le code INSEE (ex: les codes du Morbihan commencent par '56')
-        # On a retiré le "LIMIT 100" !
-        query = f"""
-            SELECT nom, ST_AsGeoJSON(geom), code 
-            FROM dim_geographie 
-            WHERE geom IS NOT NULL
-            AND code LIKE '{dept_code}%'
-        """
-        result = con.execute(query).fetchall()
-        
-        features = []
-        for row in result:
-            if row[1] is not None:
-                geometry = json.loads(row[1])
-                features.append({
-                    "type": "Feature",
-                    "properties": {
-                        "nom": row[0],
-                        "code": row[2],
-                        "prix_m2": 2500 # Donnée fictive en attendant la jointure DVF
-                    },
-                    "geometry": geometry
-                })
-                
-        con.close()
-        
-        # Petit calcul pour centrer la carte approximativement sur le département
-        # On prend le premier polygone trouvé s'il existe
-        center_lat, center_lon = 46.603354, 1.888334 # Centre France par défaut
-        if features and features[0]["geometry"]["type"] == "Polygon":
-            first_coord = features[0]["geometry"]["coordinates"][0][0]
-            center_lon, center_lat = first_coord[0], first_coord[1]
-            
-        return {
-            "geojson": {"type": "FeatureCollection", "features": features},
-            "center": [center_lat, center_lon],
-            "count": len(features)
-        }
-    except Exception as e:
-        return f"Erreur détaillée : {str(e)}"
+# --- GESTION DE LA NAVIGATION ---
+if "page" not in st.session_state:
+    st.session_state.page = "accueil"
 
-# -----------------------------------------------------------------------------
-# INTERFACE UTILISATEUR
-# -----------------------------------------------------------------------------
+def naviguer_vers(page_nom):
+    st.session_state.page = page_nom
+    st.rerun()
 
-st.title("🏡 Analyse Immobilière Territoriale")
-st.markdown("Découvrez les prix de l'immobilier en croisant la base DVF, l'Insee et les données environnementales.")
-
-st.divider()
-
-tab1, tab2 = st.tabs(["🗺️ Carte Analytique (Interactive)", "📍 Visualisateur Officiel IGN"])
-
-with tab1:
-    # --- NOUVEAU : Filtre par département ---
-    col_filtre, col_vide = st.columns([1, 2])
-    with col_filtre:
-        departements = {
-            "56": "Morbihan (56)",
-            "44": "Loire-Atlantique (44)",
-            "35": "Ille-et-Vilaine (35)",
-            "75": "Paris (75)"
-        }
-        dept_choisi = st.selectbox("Choisissez un département à analyser :", options=list(departements.keys()), format_func=lambda x: departements[x])
+# ==========================================
+# PAGE 1 : ACCUEIL
+# ==========================================
+if st.session_state.page == "accueil":
     
-    st.write(f"👉 **Survolez et cliquez sur un contour géographique** du {departements[dept_choisi]} pour voir ses statistiques détaillées.")
-
-    with st.spinner(f"Chargement des {departements[dept_choisi]} depuis DuckDB..."):
-        geo_result = get_geodata(dept_choisi)
-
-    if isinstance(geo_result, dict):
-        # Création de la carte centrée sur le département choisi
-        m = folium.Map(location=geo_result["center"], zoom_start=9, tiles="CartoDB positron")
-        
-        folium.GeoJson(
-            geo_result["geojson"],
-            name="Limites Administratives",
-            style_function=lambda feature: {
-                'fillColor': '#3498db',
-                'color': '#2c3e50',
-                'weight': 1,
-                'fillOpacity': 0.3,
-            },
-            highlight_function=lambda feature: {
-                'fillOpacity': 0.7,
-                'weight': 3,
-                'fillColor': '#FF8C00'
-            },
-            tooltip=folium.GeoJsonTooltip(
-                fields=['nom', 'code'],
-                aliases=['Commune:', 'Code INSEE:'],
-                localize=True
-            )
-        ).add_to(m)
-        
-        map_col, details_col = st.columns([2, 1])
-        
-        with map_col:
-            map_data = st_folium(m, width=700, height=500, returned_objects=["last_active_drawing"])
-            
-        with details_col:
-            st.subheader("📍 Focus Zone")
-            st.metric("Communes chargées", f"{geo_result['count']} polygones")
-            st.markdown("---")
-            
-            if map_data.get("last_active_drawing"):
-                props = map_data["last_active_drawing"]["properties"]
-                
-                st.success(f"**{props['nom']}** (Code INSEE: {props['code']})")
-                st.markdown(f"### {props['prix_m2']} €/m²")
-                st.caption("Données en cours d'intégration depuis DuckDB...")
-                
-                st.button(f"Lancer l'analyse complète de {props['nom']}", type="primary", use_container_width=True)
-                
-            else:
-                st.info("👈 Cliquez sur un contour pour afficher les statistiques.")
-    else:
-        st.warning("Impossible de charger les bordures géographiques. Vérifiez votre base DuckDB.")
-        st.error(geo_result)
-
-with tab2:
-    st.subheader("Atlas Officiel Admin Express (Source: Géoportail)")
-    st.write("Ce visualisateur utilise le Web Component officiel de l'IGN. Il est indépendant de notre base de données de prix.")
+    # On centre le logo avec des colonnes
+    col1, col_logo, col3 = st.columns([1, 2, 1])
+    with col_logo:
+        # On affiche l'image centrée
+        st.image(logo, use_container_width=True)
     
-    code_ign = """
-    <div style="height: 600px; width: 100%;">
-        <script src="https://cdn.jsdelivr.net/gh/geonetwork/geonetwork-ui@wc-dist-main/gn-wc.js"></script>
-        <gn-dataset-view-map
-                api-url="https://data.geopf.fr/catalog"
-                dataset-id="IGNF_ADMIN-EXPRESS"
-                primary-color="#0f4395"
-                secondary-color="#8bc832"
-                main-color="#555"
-                background-color="#fdfbff"
-                main-font="'Inter', sans-serif"
-                title-font="'DM Serif Display', serif"
-                style="display: block; width: 100%; height: 100%;"
-        ></gn-dataset-view-map>
-    </div>
-    """
-    components.html(code_ign, height=650)
+    st.write("") # Espace
+    
+    _, col_center, _ = st.columns([1, 2, 1])
+    with col_center:
+        st.markdown("<h3 style='text-align: center;'>Comment souhaitez-vous chercher ?</h3>", unsafe_allow_html=True)
+        st.write("")
+        
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("Exploratoire (Carte interactive)", use_container_width=True, type="primary"):
+                naviguer_vers("exploratoire")
+        with col_btn2:
+            if st.button("Recherche précise (Recommandation)", use_container_width=True):
+                naviguer_vers("recherche")
+
+# ==========================================
+# PAGE 2 : MODE EXPLORATOIRE
+# ==========================================
+elif st.session_state.page == "exploratoire":
+    
+    # Bouton retour en haut à gauche
+    if st.button(" Retour à l'accueil"):
+        naviguer_vers("accueil")
+        
+    # Séparation de l'écran : 70% pour la carte, 30% pour les critères
+    col_carte, col_criteres = st.columns([7, 3])
+    
+    with col_carte:
+        st.title("Mode Exploratoire")
+        # Carte fictive 
+        m = folium.Map(location=[46.2276, 2.2137], zoom_start=5)
+        st_folium(m, width=800, height=600)
+        
+    with col_criteres:
+        # On place le logo en haut à droite (au-dessus des filtres, comme sur votre maquette)
+        col_vide, col_img = st.columns([1, 2])
+        with col_img:
+            st.image(logo, use_container_width=True)
+            
+        st.subheader("Vos Critères")
+        ville = st.selectbox("Ville", ["Sélectionnez...", "Vannes", "Lorient", "Rennes"])
+        prix = st.slider("Prix Max (€/m²)", 1000, 10000, 3000)
+        bruit = st.selectbox("Bruit (PEB)", ["Peu importe", "Zone Calme", "Zone Bruyante"])
+        energie = st.multiselect("Énergie (DPE)", ["A", "B", "C", "D", "E", "F", "G"])
+
+# ==========================================
+# PAGE 3 : RECHERCHE PRÉCISE
+# ==========================================
+elif st.session_state.page == "recherche":
+    
+    col_titre, col_img_droite = st.columns([8, 2])
+    with col_titre:
+        if st.button(" Retour à l'accueil"):
+            naviguer_vers("accueil")
+        st.title("Recherche Précise")
+        st.write("Dites-nous ce que vous cherchez, nous vous dirons où habiter !")
+    with col_img_droite:
+        st.image(logo, use_container_width=True)
+    
+    with st.form("formulaire_recherche"):
+        budget = st.number_input("Budget Total (€)", min_value=50000, step=10000)
+        surface_min = st.number_input("Surface minimum (m²)", min_value=9, step=5)
+        importance_calme = st.slider("Importance du calme (1=Faible, 5=Indispensable)", 1, 5, 3)
+        
+        soumis = st.form_submit_button("Trouver mon secteur idéal", type="primary")
+        
+        if soumis:
+            st.success("L'algorithme a trouvé 3 secteurs parfaits pour vous !")
