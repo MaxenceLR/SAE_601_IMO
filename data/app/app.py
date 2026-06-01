@@ -3,6 +3,7 @@ import folium
 from streamlit_folium import st_folium
 import os
 from PIL import Image
+import backend # On importe notre nouveau fichier
 
 # 1. Configuration de la page
 st.set_page_config(page_title="Invest'Immo BI", page_icon="🏢", layout="wide")
@@ -53,6 +54,7 @@ if st.session_state.page == "accueil":
             if st.button("📊 Analyse du Marché\n(Graphiques & Tendances)", use_container_width=True):
                 naviguer_vers("dataviz")
 
+
 # ==========================================
 # PAGE 2 : MODE EXPLORATOIRE (CARTE)
 # ==========================================
@@ -63,20 +65,47 @@ elif st.session_state.page == "exploratoire":
         
     col_carte, col_criteres = st.columns([7, 3])
     
-    with col_carte:
-        st.title("Exploration Territoriale")
-        # Carte fictive centrée sur Nantes (Département 44)
-        m = folium.Map(location=[47.2184, -1.5536], zoom_start=11)
-        st_folium(m, width=800, height=600)
-        
     with col_criteres:
         st.subheader("Filtres de recherche")
-        # Ces valeurs statiques seront remplacées plus tard par des appels au Back-End
-        ville = st.selectbox("Secteur / Commune", ["Secteur Ouest", "Secteur Est", "Nantes Centre", "Saint-Herblain"])
+        
+        # --- APPEL AU BACKEND : Liste dynamique des villes ---
+        liste_villes = backend.get_villes()
+        ville = st.selectbox("Secteur / Commune", liste_villes)
+        
         prix = st.slider("Prix Max (€/m²)", 1000, 10000, 4500)
         bruit = st.selectbox("Environnement (PEB)", ["Indifférent", "Hors zone de bruit", "Zone modérée"])
         energie = st.multiselect("Performance Énergétique (DPE)", ["A", "B", "C", "D", "E", "F", "G"], default=["A", "B", "C"])
 
+    with col_carte:
+        st.title("Exploration Territoriale")
+        
+        # --- APPEL AU BACKEND : Récupération des données ---
+        df_biens = backend.get_donnees_carte(ville, prix, bruit, energie)
+        
+        if df_biens.empty:
+            if ville == "Sélectionnez une ville...":
+                st.info("👈 Veuillez sélectionner une ville dans le menu de droite.")
+            else:
+                st.warning("Aucun bien ne correspond à vos critères.")
+        else:
+            # On centre la carte sur le premier point trouvé
+            lat_moyenne = df_biens['latitude'].mean()
+            lon_moyenne = df_biens['longitude'].mean()
+            m = folium.Map(location=[lat_moyenne, lon_moyenne], zoom_start=12)
+            
+            # On place un marqueur pour chaque bien
+            for idx, row in df_biens.iterrows():
+                popup_text = f"Prix: {row['prix_m2']} €/m²<br>DPE: {row['etiquette_dpe']}<br>Bruit: {row['peb_zone']}"
+                folium.CircleMarker(
+                    location=[row['latitude'], row['longitude']],
+                    radius=5,
+                    color="blue" if row['etiquette_dpe'] in ['A', 'B', 'C'] else "red",
+                    fill=True,
+                    popup=folium.Popup(popup_text, max_width=200)
+                ).add_to(m)
+                
+            st_folium(m, width=800, height=600)
+            st.caption(f"📍 {len(df_biens)} biens affichés sur la carte.")
 # ==========================================
 # PAGE 3 : INVESTISSEMENT & RÉNOVATION
 # ==========================================
@@ -123,12 +152,28 @@ elif st.session_state.page == "dataviz":
     # Filtres horizontaux pour les graphiques
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        variable_x = st.selectbox("Comparer selon :", ["Commune", "Étiquette DPE", "Année de construction"])
+        variable_x = st.selectbox("Analyser la répartition par :", ["Étiquette DPE", "Commune", "Année de construction"])
     with col_f2:
-        variable_y = st.selectbox("Indicateur :", ["Prix moyen au m²", "Volume de ventes", "Surface moyenne"])
+        variable_y = st.selectbox("Indicateur à calculer :", ["Prix moyen au m²", "Volume de ventes", "Surface moyenne"])
         
     st.divider()
     
-    # Espace réservé pour les futurs graphiques (Streamlit ou Plotly)
-    st.markdown(f"*(Ici apparaîtra le graphique croisant **{variable_x}** et **{variable_y}** via le Back-End)*")
-    st.bar_chart({"Données fictives A": [10, 20, 30], "Données fictives B": [15, 25, 35]})
+    # --- APPEL AU BACKEND ---
+    df_graph = backend.get_donnees_graphiques(variable_x, variable_y)
+    
+    if df_graph.empty:
+        st.warning("Aucune donnée disponible pour ce croisement.")
+    else:
+        st.subheader(f"{variable_y} en fonction de : {variable_x}")
+        
+        # Streamlit crée automatiquement un superbe graphique interactif !
+        st.bar_chart(
+            data=df_graph, 
+            x=variable_x, 
+            y=variable_y,
+            use_container_width=True
+        )
+        
+        # Optionnel : afficher le tableau de données en dessous pour les plus curieux
+        with st.expander("Voir les données brutes"):
+            st.dataframe(df_graph, use_container_width=True)
