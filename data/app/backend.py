@@ -157,3 +157,69 @@ def get_donnees_graphiques(choix_x, choix_y):
     con.close()
     return df
    
+
+   # --- FONCTIONS INVESTISSEMENT ---
+
+@st.cache_data
+def get_opportunites_investissement(budget, surface_min, cout_renovation, dpe_cible):
+    """
+    Identifie les secteurs les plus rentables pour l'achat-rénovation.
+    Calcule la différence entre le prix d'une passoire thermique + travaux
+    et le prix de revente d'un bien avec le DPE cible.
+    """
+    con = duckdb.connect(str(DB_PATH), read_only=True)
+    
+    # 1. On construit la requête SQL (CTE - Common Table Expression)
+    # On calcule d'abord les moyennes pour chaque ville
+    query = f"""
+        WITH stats_ville AS (
+            SELECT 
+                v.nom_commune,
+                
+                -- Prix moyen des passoires thermiques (F ou G)
+                AVG(CASE WHEN d.etiquette_dpe IN ('F', 'G') THEN 
+                    TRY_CAST(REPLACE(v.valeur_fonciere, ',', '.') AS DOUBLE) / 
+                    NULLIF(TRY_CAST(v.surface_reelle_bati AS DOUBLE), 0)
+                END) AS prix_m2_passoire,
+                
+                -- Prix moyen des biens déjà rénovés (Le DPE cible choisi)
+                AVG(CASE WHEN d.etiquette_dpe = '{dpe_cible}' THEN 
+                    TRY_CAST(REPLACE(v.valeur_fonciere, ',', '.') AS DOUBLE) / 
+                    NULLIF(TRY_CAST(v.surface_reelle_bati AS DOUBLE), 0)
+                END) AS prix_m2_renove
+                
+            FROM dvf v
+            LEFT JOIN raw_dpe d ON d.code_insee_ban = v.code_commune
+            GROUP BY v.nom_commune
+        )
+        
+        -- 2. On filtre et on calcule la plus-value
+        SELECT 
+            nom_commune,
+            ROUND(prix_m2_passoire) AS prix_achat_m2,
+            ROUND(prix_m2_renove) AS prix_revente_m2,
+            -- Formule : Prix revente - (Prix achat + Cout travaux)
+            ROUND(prix_m2_renove - (prix_m2_passoire + {cout_renovation})) AS profit_m2_estime
+        FROM stats_ville
+        
+        WHERE prix_m2_passoire IS NOT NULL 
+          AND prix_m2_renove IS NOT NULL
+          
+          -- Le projet doit rentrer dans le budget de l'utilisateur
+          AND (prix_m2_passoire + {cout_renovation}) * {surface_min} <= {budget}
+          
+          -- On ne garde que les villes où l'opération est rentable (profit > 0)
+          AND (prix_m2_renove - (prix_m2_passoire + {cout_renovation})) > 0
+          
+        ORDER BY profit_m2_estime DESC
+        LIMIT 5
+    """
+
+    try:
+        df = con.execute(query).df()
+    except Exception as e:
+        st.error(f"Erreur SQL lors du calcul d'investissement : {e}")
+        df = pd.DataFrame()
+
+    con.close()
+    return df

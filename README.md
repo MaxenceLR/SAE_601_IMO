@@ -35,7 +35,8 @@ Le projet respecte le cycle de vie classique d'un projet de données (Pipeline E
 
 ##  Installation et Utilisation
 
-*- pip install -r requirements.txt
+*
+- pip install -r requirements.txt
 - python data/src/Lancement_script.py
 - streamlit run data/app/app.py *
 

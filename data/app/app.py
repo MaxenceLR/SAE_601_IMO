@@ -134,11 +134,32 @@ elif st.session_state.page == "recherche":
 
     with col_result:
         if soumis:
-            st.success("Analyse terminée !")
-            st.info("💡 **Exemple de recommandation générée par l'algorithme :**\n\nDans le quartier de **Chantenay**, les biens classés G s'achètent à 2500€/m². Avec vos travaux estimés à 1000€/m², votre coût de revient est de 3500€/m². Un bien classé C se revendant à 4200€/m² dans ce secteur, **votre profit potentiel est de 700€/m²**.")
+            st.success("Analyse terminée ! Voici les meilleures opportunités :")
+            
+            # --- APPEL AU BACKEND ---
+            df_invest = backend.get_opportunites_investissement(budget, surface_min, cout_renovation, cible_dpe)
+            
+            if df_invest.empty:
+                st.warning("Aucun secteur ne permet de réaliser une plus-value avec ces critères. Essayez d'augmenter votre budget ou de réduire le coût des travaux.")
+            else:
+                st.write("### Top 5 des secteurs rentables")
+                st.dataframe(
+                    df_invest.rename(columns={
+                        "nom_commune": "Secteur",
+                        "prix_achat_m2": "Achat (Passoire) €/m²",
+                        "prix_revente_m2": f"Revente (DPE {cible_dpe}) €/m²",
+                        "profit_m2_estime": "Plus-value estimée €/m²"
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Petit calcul de mise en situation avec la meilleure ville
+                meilleure_ville = df_invest.iloc[0]
+                profit_total = meilleure_ville['profit_m2_estime'] * surface_min
+                st.info(f"💡 **Conseil de l'algorithme :**\n\nEn achetant un bien de **{surface_min}m²** à **{meilleure_ville['nom_commune']}**, et après avoir payé vos travaux, vous pourriez générer une plus-value nette estimée à **{profit_total:,.0f} €** à la revente !")
         else:
             st.write("Remplissez le formulaire pour découvrir les opportunités de déficit foncier et de plus-value.")
-
 # ==========================================
 # PAGE 4 : DATAVIZ (GRAPHIQUES)
 # ==========================================
