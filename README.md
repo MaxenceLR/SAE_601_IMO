@@ -35,8 +35,11 @@ Le projet respecte le cycle de vie classique d'un projet de données (Pipeline E
 
 ##  Installation et Utilisation
 
-*pip isntalle requirements.txt
- python data/src/Lancement_script.py*
+*
+- pip install -r requirements.txt
+- python data/src/Lancement_script.py
+- streamlit run app.py 
+*
 
 
 ### Clonage du projet
