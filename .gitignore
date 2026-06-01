@@ -4,6 +4,7 @@ env/
 
 # Fichiers de configuration sensibles
 .env
+.vscode
 
 # Fichiers cache Python
 __pycache__/
