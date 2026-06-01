@@ -35,13 +35,11 @@ Le projet respecte le cycle de vie classique d'un projet de données (Pipeline E
 
 ##  Installation et Utilisation
 
-*
-- pip install -r requirements.txt
+*- pip install -r requirements.txt
 - python data/src/Lancement_script.py
-- streamlit run data/app/app.py 
-*
+- streamlit run data/app/app.py *
 
 
 ### Clonage du projet
 ```bash
-git clone //partage-ens.univ-ubs.fr/projets/3bvi11/Projet_imo (pas toucher pls)
+git clone https://github.com/MaxenceLR/SAE_601_IMO
