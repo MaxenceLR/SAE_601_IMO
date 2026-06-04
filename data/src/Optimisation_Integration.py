@@ -3,7 +3,7 @@ from pathlib import Path
 import time
 
 def optimiser_base_donnees():
-    print("🚀 Démarre la création de la table optimisée (Data Mart)...")
+    print("Démarre la création de la table optimisée (Data Mart)...")
     t0 = time.perf_counter()
     
     BASE_DIR = Path(__file__).resolve().parent
@@ -15,9 +15,14 @@ def optimiser_base_donnees():
         # Activer l'extension spatiale pour la jointure PEB
         con.execute("INSTALL spatial; LOAD spatial;")
         
+        # 0. Création de l'index spatial (CRUCIAL pour accélérer ST_Intersects)
+        print(" -> Création de l'index spatial sur la table PEB...")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_peb_geom ON peb USING RTREE (geom);")
+        
         # 1. Nettoyage et création de la table Or (biens_optimises)
         con.execute("DROP TABLE IF EXISTS biens_optimises;")
         
+        # Requête corrigée avec sous-requête GROUP BY pour éviter l'explosion des données
         query_table = """
             CREATE TABLE biens_optimises AS
             SELECT 
@@ -36,7 +41,15 @@ def optimiser_base_donnees():
                 d.periode_construction,
                 COALESCE(p.peb_zone, 'Aucune') AS peb_zone
             FROM dvf v
-            LEFT JOIN raw_dpe d 
+            LEFT JOIN (
+                -- On agrège les DPE par commune pour garantir 1 seule ligne par ville
+                SELECT 
+                    code_insee_ban, 
+                    MODE(etiquette_dpe) AS etiquette_dpe, 
+                    MODE(periode_construction) AS periode_construction 
+                FROM raw_dpe 
+                GROUP BY code_insee_ban
+            ) d 
                 ON d.code_insee_ban = v.code_commune 
             LEFT JOIN peb p 
                 ON ST_Intersects(v.geom, p.geom)
@@ -48,13 +61,12 @@ def optimiser_base_donnees():
         con.execute(query_table)
         
         # 2. L'arme secrète de DuckDB : Les Index
-        # Un index permet à DuckDB de trouver une ville instantanément sans relire toute la table
-        print(" -> Création des index de performance...")
+        print(" -> Création des index de performance classiques...")
         con.execute("CREATE INDEX IF NOT EXISTS idx_commune ON biens_optimises(nom_commune);")
         con.execute("CREATE INDEX IF NOT EXISTS idx_dpe ON biens_optimises(etiquette_dpe);")
 
         print("\n" + "="*50)
-        print("✅ PIPELINE D'OPTIMISATION TERMINÉ !")
+        print("PIPELINE D'OPTIMISATION TERMINÉ !")
         print(f"Base de données accélérée en {time.perf_counter() - t0:.1f}s")
         print("="*50 + "\n")
 
