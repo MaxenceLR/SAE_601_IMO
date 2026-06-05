@@ -31,6 +31,7 @@ def optimiser_base_donnees():
                 v.code_commune,
                 TRY_CAST(REPLACE(v.valeur_fonciere, ',', '.') AS DOUBLE) AS valeur_fonciere,
                 TRY_CAST(v.surface_reelle_bati AS DOUBLE) AS surface,
+                TRY_CAST(v.nombre_pieces_principales AS INTEGER) AS nombre_pieces,
                 ROUND(
                     TRY_CAST(REPLACE(v.valeur_fonciere, ',', '.') AS DOUBLE) / 
                     NULLIF(TRY_CAST(v.surface_reelle_bati AS DOUBLE), 0)

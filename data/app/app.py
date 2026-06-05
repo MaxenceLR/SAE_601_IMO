@@ -31,7 +31,22 @@ def naviguer_vers(page_nom):
 # ==========================================
 if st.session_state.page == "accueil":
     
-    col1, col_logo, col3 = st.columns([1, 2, 1])
+    # --- NOUVEAUTÉ : Injection de CSS pour customiser les boutons ---
+    st.markdown("""
+        <style>
+        /* On cible tous les boutons affichés sur cette page d'accueil */
+        div.stButton > button {
+            height: 90px; /* Augmente la hauteur du bouton */
+            font-size: 18px !important; /* Agrandit le texte */
+            font-weight: bold !important; /* Met le texte en gras */
+            border-radius: 10px; /* Arrondit légèrement les bords pour faire moderne */
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # --- NOUVEAUTÉ : Modification des proportions pour rapetisser le logo ---
+    # Avant c'était [1, 2, 1], maintenant la colonne centrale est plus fine [1.5, 1, 1.5]
+    col1, col_logo, col3 = st.columns([1.5, 1, 1.5])
     with col_logo:
         if has_logo:
             st.image(logo, use_container_width=True)
@@ -53,7 +68,7 @@ if st.session_state.page == "accueil":
             if st.button("Investissement\n(Stratégie Rénovation)", use_container_width=True, type="primary"):
                 naviguer_vers("recherche")
         with col_btn3:
-            if st.button("Analyse du Marché\n(Graphiques & Tendances)", use_container_width=True):
+            if st.button("Analyse du Marché\n(Graphiques)", use_container_width=True):
                 naviguer_vers("dataviz")
 
 # ==========================================
@@ -91,7 +106,6 @@ elif st.session_state.page == "exploratoire":
             m = folium.Map(location=[lat_moyenne, lon_moyenne], zoom_start=13)
             
             # --- ÉTAPE A : Dessiner les "Quartiers" (Zones de 1km²) ---
-            # On groupe les données par secteur pour calculer les stats de la zone
             secteurs = df_biens.groupby(['secteur_lat', 'secteur_lon']).agg(
                 prix_moyen=('prix_m2', 'mean'),
                 nb_biens=('prix_m2', 'count')
@@ -101,62 +115,68 @@ elif st.session_state.page == "exploratoire":
                 z_lat = zone['secteur_lat']
                 z_lon = zone['secteur_lon']
                 
-                # Mathématiques magiques : Un arrondi à 0.01 degré correspond à un carré 
-                # allant de -0.005 à +0.005 autour du point central.
                 limites_carre = [
-                    [z_lat - 0.005, z_lon - 0.005], # Coin sud-ouest
-                    [z_lat + 0.005, z_lon + 0.005]  # Coin nord-est
+                    [z_lat - 0.005, z_lon - 0.005], 
+                    [z_lat + 0.005, z_lon + 0.005]  
                 ]
                 
                 texte_zone = f"<b>Zone de Quartier</b><br>Prix moyen : {zone['prix_moyen']:,.0f} €/m²<br>Biens dispo : {zone['nb_biens']}"
                 
                 folium.Rectangle(
                     bounds=limites_carre,
-                    color="#4A90E2",         # Couleur de la bordure
-                    weight=1,                # Bordure très fine
+                    color="#4A90E2",         
+                    weight=1,                
                     fill=True,
-                    fill_color="#4A90E2",    # Couleur du fond
-                    fill_opacity=0.15,       # Assez transparent (15%)
-                    tooltip=texte_zone       # Affichage au survol de la souris
+                    fill_color="#4A90E2",    
+                    fill_opacity=0.15,       
+                    tooltip=texte_zone       
                 ).add_to(m)
 
             # --- ÉTAPE B : Dessiner les points individuels (Dégradé de prix) ---
             
-            # 1. Calcul du prix min et max de la ville actuelle pour calibrer le dégradé
             min_prix = df_biens['prix_m2'].min()
             max_prix = df_biens['prix_m2'].max()
             
-            # Sécurité au cas où il n'y aurait qu'un seul bien (évite un crash mathématique)
             if min_prix == max_prix:
                 min_prix = min_prix - 1
                 max_prix = max_prix + 1
             
-            # 2. Création de l'échelle de couleurs (Vert = moins cher, Jaune = moyen, Rouge = cher)
             colormap = cm.LinearColormap(
-                colors=['#00b894', '#fdcb6e', '#d63031'], # Vert menthe, Jaune soleil, Rouge vif
+                colors=['#00b894', '#fdcb6e', '#d63031'], 
                 vmin=min_prix, 
                 vmax=max_prix
             )
             colormap.caption = f"Échelle des prix au m² à {ville} (€)"
-            m.add_child(colormap) # Ajoute la légende sur la carte
+            m.add_child(colormap) 
 
-            # 3. Placement des points avec leur nouvelle couleur
+            # 3. Placement des points avec leur nouvelle couleur et les nouvelles infos
             for idx, row in df_biens.iterrows():
-                texte_dpe = f"DPE : {row['etiquette_dpe']}"
-                popup_text = f"<b>Prix: {row['prix_m2']:,.0f} €/m²</b><br>{texte_dpe}<br>Bruit: {row['peb_zone']}"
+                # Récupération sécurisée au cas où la base n'a pas encore la colonne "nombre_pieces"
+                nb_pieces = row.get('nombre_pieces', 'N/A')
+                surface = row.get('surface', 'N/A')
                 
-                # On détermine la couleur exacte de ce bien grâce à l'échelle
+                texte_dpe = f"DPE : {row['etiquette_dpe']}"
+                
+                # Mise à jour du texte de la popup avec Surface et Pièces
+                popup_text = f"""
+                <b>Prix: {row['prix_m2']:,.0f} €/m²</b><br>
+                📐 Surface: {surface} m²<br>
+                🚪 Pièces: {nb_pieces}<br>
+                {texte_dpe}<br>
+                🔊 Bruit: {row['peb_zone']}
+                """
+                
                 couleur_bien = colormap(row['prix_m2'])
                 
                 folium.CircleMarker(
                     location=[row['latitude'], row['longitude']],
-                    radius=6, # On grossit légèrement le point pour mieux voir la couleur
-                    color="#333333", # Une petite bordure gris foncé pour le faire ressortir sur le fond bleu
+                    radius=6, 
+                    color="#333333", 
                     weight=1.5,
                     fill=True,
                     fill_color=couleur_bien,
                     fill_opacity=0.95,
-                    popup=folium.Popup(popup_text, max_width=200)
+                    popup=folium.Popup(popup_text, max_width=250) # Légèrement élargi pour que le texte rentre bien
                 ).add_to(m)
                 
             st_folium(m, use_container_width=True, height=700, returned_objects=[])
@@ -189,20 +209,17 @@ elif st.session_state.page == "recherche":
                 
                 st.divider()
                 st.subheader("Profil Investisseur")
-                # NOUVEAU : Choix de la stratégie
                 strategie = st.radio("Objectif visé :", [
                     "🏛️ Patrimonial (Secteurs prisés, risque faible)", 
                     "💰 Rendement (Prix bas, forte marge)",
                     "⚖️ Équilibré (Compromis)"
                 ])
-                # NOUVEAU : Filtre Littoral
                 choix_littoral = st.selectbox("Préférence géographique :", ["Indifférent", "🌊 Littoral uniquement", "🌳 Terres / Rétro-littoral"])
                 
                 soumis_achat = st.form_submit_button("Trouver la perle rare", type="primary")
         
         with col_carte_a:
             if soumis_achat:
-                # On envoie les nouveaux critères au backend
                 df_achat = backend.get_recommandations_achat(budget_max, surface_min, energie, strategie, choix_littoral)
                 
                 if df_achat.empty:
@@ -212,7 +229,6 @@ elif st.session_state.page == "recherche":
                     
                     m_achat = folium.Map(location=[df_achat['lat'].mean(), df_achat['lon'].mean()], zoom_start=9)
                     
-                    # On adapte les couleurs : or pour le patrimonial, vert pour le rendement
                     couleurs = {"Patrimonial": "gold", "Rendement": "green", "Équilibré": "blue", "À Fuir (Hors Budget)": "red"}
                     
                     for _, row in df_achat.iterrows():
@@ -256,7 +272,6 @@ elif st.session_state.page == "recherche":
                 else:
                     st.success("Top 5 des zones pour la rénovation :")
                     
-                    # 1. Affichage du tableau (On cache les colonnes GPS avec drop)
                     st.dataframe(
                         df_invest.drop(columns=['secteur_lat', 'secteur_lon']).rename(columns={
                             "nom_commune": "Secteur",
@@ -267,23 +282,19 @@ elif st.session_state.page == "recherche":
                         use_container_width=True, hide_index=True
                     )
 
-                    # 2. Affichage de la carte des opportunités
                     st.write("### 🗺️ Carte des opportunités")
                     
-                    # On centre la carte sur la meilleure opportunité (la première ligne du tableau)
                     meilleure_lat = df_invest.iloc[0]['secteur_lat']
                     meilleure_lon = df_invest.iloc[0]['secteur_lon']
                     m_renov = folium.Map(location=[meilleure_lat, meilleure_lon], zoom_start=10)
                     
-                    # On dessine un cercle ou un carré pour chaque zone du Top 5
                     for idx, row in df_invest.iterrows():
-                        # On met en valeur la zone n°1 (la plus rentable) avec une couleur différente
                         couleur = "gold" if idx == 0 else "blue"
                         texte_popup = f"<b>{row['nom_commune']}</b><br>Gain estimé : +{row['profit_m2_estime']:,.0f} €/m²<br>Achat : {row['prix_achat_m2']:,.0f} €/m²<br>Revente : {row['prix_revente_m2']:,.0f} €/m²"
                         
                         folium.CircleMarker(
                             location=[row['secteur_lat'], row['secteur_lon']],
-                            radius=15, # Un rond assez grand pour représenter le quartier
+                            radius=15, 
                             color=couleur,
                             fill=True,
                             fill_color=couleur,
@@ -292,13 +303,13 @@ elif st.session_state.page == "recherche":
                             popup=folium.Popup(texte_popup, max_width=250)
                         ).add_to(m_renov)
                         
-                        # Ajout d'une petite icône au centre de la zone
                         folium.Marker(
                             location=[row['secteur_lat'], row['secteur_lon']],
                             icon=folium.Icon(color="green" if idx == 0 else "blue", icon="wrench", prefix="fa")
                         ).add_to(m_renov)
                     
                     st_folium(m_renov, use_container_width=True, height=400, returned_objects=[])
+
 # ==========================================
 # PAGE 4 : DATAVIZ (GRAPHIQUES)
 # ==========================================
@@ -322,33 +333,27 @@ elif st.session_state.page == "dataviz":
     if df_graph.empty:
         st.warning("Aucune donnée disponible pour ce croisement.")
     else:
-        # --- NOUVEAUTÉ : Les cartes du TOP 3 ---
         st.subheader(f"🏆 Top 3 - {variable_y}")
         col_m1, col_m2, col_m3 = st.columns(3)
         colonnes_metrics = [col_m1, col_m2, col_m3]
         
-        # Définition de l'unité à afficher sur la carte selon le choix de l'utilisateur
         unite = " €/m²" if "Prix" in variable_y else (" m²" if "Surface" in variable_y else "")
         
-        # On boucle sur les 3 premières lignes (ou moins s'il y a moins de 3 résultats)
         top_n = min(3, len(df_graph))
         for i in range(top_n):
             with colonnes_metrics[i]:
                 nom = df_graph.iloc[i][variable_x]
                 valeur = df_graph.iloc[i][variable_y]
-                # st.metric crée automatiquement le joli bloc avec le grand chiffre
                 st.metric(label=str(nom), value=f"{valeur:,.0f}{unite}".replace(',', ' '))
 
         st.divider()
         
-        # --- LE GRAPHIQUE ---
         st.subheader(f"{variable_y} en fonction de : {variable_x} (Top 50)")
         
-        # On utilise Altair pour forcer le tri décroissant (sort='-y')
         graphique = alt.Chart(df_graph).mark_bar().encode(
             x=alt.X(f"{variable_x}:N", sort='-y', title=variable_x),
             y=alt.Y(f"{variable_y}:Q", title=variable_y),
-            tooltip=[variable_x, variable_y] # Petit bonus : affiche les valeurs au survol de la souris !
+            tooltip=[variable_x, variable_y] 
         )
         
         st.altair_chart(graphique, use_container_width=True)

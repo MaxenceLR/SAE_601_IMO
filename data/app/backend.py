@@ -43,6 +43,7 @@ def get_donnees_carte(ville, prix_max, peb_filtre, energies_dpe):
             longitude, 
             valeur_fonciere, 
             surface, 
+            nombre_pieces, -- ✨ NOUVELLE LIGNE
             prix_m2, 
             etiquette_dpe, 
             peb_zone,
