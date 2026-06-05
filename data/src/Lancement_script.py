@@ -18,12 +18,21 @@ print(f"LANCEMENT DU PIPELINE POUR LE DEPARTEMENT : {dept_cible}")
 print("="*50)
 
 scripts = [
+<<<<<<< HEAD
     #BASE_DIR / "AB_Integration.py",
     #BASE_DIR / "BAN_Integration.py",
     #BASE_DIR / "DPE_Integration.py",
     #BASE_DIR / "DVF_Integration.py",
     #BASE_DIR / "PEB_Integration.py",
     #BASE_DIR / "Optimisation_Integration.py"
+=======
+    BASE_DIR / "AB_Integration.py",
+    BASE_DIR / "BAN_Integration.py",
+    BASE_DIR / "DPE_Integration.py",
+    BASE_DIR / "DVF_Integration.py",
+    BASE_DIR / "PEB_Integration.py",
+    BASE_DIR / "Optimisation_Integration.py"  # <-- Il est intégré au pipeline ici !
+>>>>>>> aaac0936b4ce36fcb14fc6d0e50113c91e95ebeb
 ]
 
 # Variable pour suivre si tout s'est bien passé
