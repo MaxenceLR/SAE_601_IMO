@@ -19,8 +19,8 @@ scripts = [
     BASE_DIR / "BAN_Integration.py",
     BASE_DIR / "DPE_Integration.py",
     BASE_DIR / "DVF_Integration.py",
-    BASE_DIR / "PEB_Integration.py"#,
-    #BASE_DIR / "Optimisation_Integration.py"  # <-- Il est intégré au pipeline ici !
+    BASE_DIR / "PEB_Integration.py",
+    BASE_DIR / "Optimisation_Integration.py"  # <-- Il est intégré au pipeline ici !
 ]
 
 for script in scripts:
